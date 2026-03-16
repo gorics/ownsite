@@ -1,206 +1,245 @@
-import React, { useState, useCallback } from 'react';
-import { Upload, FileDown, Image as ImageIcon, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>카카오 이모티콘 규격 변환기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .spinner {
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 2px solid white;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-slate-50 p-6 flex flex-col items-center justify-center">
 
-// JSZip은 CDN을 통해 동적으로 로드합니다.
-const JSZIP_CDN = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+    <div class="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 border border-slate-100">
+        <div class="text-center mb-8">
+            <h1 class="text-2xl font-bold text-slate-900 mb-2">카카오 이모티콘 변환기</h1>
+            <p class="text-slate-500 text-sm">
+                360x360px 리사이징 & 투명 PNG 유지<br/>
+                150KB 최적화 및 일괄 ZIP 변환
+            </p>
+        </div>
 
-const App = () => {
-  const [files, setFiles] = useState([]);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [error, setError] = useState(null);
+        <div class="space-y-6">
+            <!-- 업로드 영역 -->
+            <label id="dropzone" class="group relative flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-slate-300 rounded-xl cursor-pointer hover:border-yellow-400 hover:bg-yellow-50/30 transition-all">
+                <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                    <svg class="w-10 h-10 text-slate-400 group-hover:text-yellow-500 mb-3 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                    </svg>
+                    <p class="text-sm text-slate-600 font-medium">이미지 파일들을 선택하거나 드래그하세요</p>
+                    <p class="text-xs text-slate-400 mt-1">PNG, JPG 지원</p>
+                </div>
+                <input id="fileInput" type="file" class="hidden" multiple accept="image/*" />
+            </label>
 
-  const loadJSZip = () => {
-    return new Promise((resolve, reject) => {
-      if (window.JSZip) return resolve(window.JSZip);
-      const script = document.createElement('script');
-      script.src = JSZIP_CDN;
-      script.onload = () => resolve(window.JSZip);
-      script.onerror = () => reject(new Error("JSZip 로드 실패"));
-      document.head.appendChild(script);
-    });
-  };
+            <!-- 파일 목록 -->
+            <div id="fileListContainer" class="hidden bg-slate-50 rounded-lg p-4 max-h-40 overflow-y-auto">
+                <p id="fileCount" class="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wider">대기 중인 파일 (0)</p>
+                <div id="fileList" class="space-y-2">
+                    <!-- 파일 아이템들이 여기에 삽입됩니다 -->
+                </div>
+            </div>
 
-  const processImage = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d');
-          
-          // 카카오 규격: 360x360
-          canvas.width = 360;
-          canvas.height = 360;
+            <!-- 에러 메시지 -->
+            <div id="errorMessage" class="hidden flex items-center p-3 text-sm text-red-600 bg-red-50 rounded-lg border border-red-100">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span id="errorText"></span>
+            </div>
 
-          // 투명 배경 유지 및 리사이징 (Contain 방식)
-          ctx.clearRect(0, 0, 360, 360);
-          
-          const scale = Math.min(360 / img.width, 360 / img.height);
-          const x = (360 / 2) - (img.width / 2) * scale;
-          const y = (360 / 2) - (img.height / 2) * scale;
-          
-          ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+            <!-- 실행 버튼 -->
+            <button id="downloadBtn" disabled class="w-full py-4 rounded-xl font-bold text-white shadow-lg transition-all flex items-center justify-center space-x-2 bg-slate-300 cursor-not-allowed shadow-none">
+                <span id="btnIcon" class="mr-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                    </svg>
+                </span>
+                <span id="btnText">파일을 업로드해주세요</span>
+            </button>
+        </div>
 
-          canvas.toBlob((blob) => {
-            if (blob) {
-              resolve({
-                blob,
-                name: file.name.replace(/\.[^/.]+$/, "") + ".png"
-              });
-            } else {
-              reject(new Error("이미지 처리 중 오류가 발생했습니다."));
-            }
-          }, 'image/png');
-        };
-        img.onerror = () => reject(new Error("이미지를 불러올 수 없습니다."));
-        img.src = e.target.result;
-      };
-      reader.readAsDataURL(file);
-    });
-  };
+        <div class="mt-8 pt-6 border-t border-slate-100 text-[11px] text-slate-400 leading-relaxed">
+            <p>• 규격: 360 x 360px (정사각형 변환)</p>
+            <p>• 파일 종류: PNG (투명 배경 보존)</p>
+            <p>• 용량 제한: 파일당 150KB 이하 권장</p>
+            <p>• 다수 파일 업로드 시 하나의 ZIP으로 묶어 드립니다.</p>
+        </div>
+    </div>
 
-  const handleFileUpload = (e) => {
-    const uploadedFiles = Array.from(e.target.files).filter(file => file.type.startsWith('image/'));
-    setFiles(uploadedFiles);
-    setError(null);
-  };
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const dropzone = document.getElementById('dropzone');
+        const fileListContainer = document.getElementById('fileListContainer');
+        const fileList = document.getElementById('fileList');
+        const fileCountText = document.getElementById('fileCount');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const btnText = document.getElementById('btnText');
+        const btnIcon = document.getElementById('btnIcon');
+        const errorMessage = document.getElementById('errorMessage');
+        const errorText = document.getElementById('errorText');
 
-  const downloadResults = async () => {
-    if (files.length === 0) return;
-    setIsProcessing(true);
-    setError(null);
+        let selectedFiles = [];
 
-    try {
-      const processed = await Promise.all(files.map(file => processImage(file)));
-
-      if (processed.length === 1) {
-        // 파일이 하나인 경우 직접 다운로드
-        const url = URL.createObjectURL(processed[0].blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = processed[0].name;
-        link.click();
-        URL.revokeObjectURL(url);
-      } else {
-        // 파일이 여러 개인 경우 ZIP으로 압축
-        const JSZip = await loadJSZip();
-        const zip = new JSZip();
-        
-        // 중복 파일 방지 로직
-        const nameCount = {};
-        processed.forEach(item => {
-          let finalName = item.name;
-          if (nameCount[finalName]) {
-            const parts = finalName.split('.');
-            const ext = parts.pop();
-            finalName = `${parts.join('.')}_${nameCount[finalName]}.${ext}`;
-            nameCount[item.name]++;
-          } else {
-            nameCount[finalName] = 1;
-          }
-          zip.file(finalName, item.blob);
+        // 드래그 앤 드롭 핸들러
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('border-yellow-400', 'bg-yellow-50/30');
         });
 
-        const content = await zip.generateAsync({ type: "blob" });
-        const url = URL.createObjectURL(content);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = "kakao_emoticons_converted.zip";
-        link.click();
-        URL.revokeObjectURL(url);
-      }
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('border-yellow-400', 'bg-yellow-50/30');
+        });
 
-  return (
-    <div className="min-h-screen bg-slate-50 p-6 flex flex-col items-center justify-center font-sans">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 border border-slate-100">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-slate-900 mb-2">카카오 이모티콘 변환기</h1>
-          <p className="text-slate-500 text-sm">
-            360x360px 리사이징 & 투명 PNG 유지<br/>
-            150KB 최적화 및 일괄 ZIP 변환
-          </p>
-        </div>
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('border-yellow-400', 'bg-yellow-50/30');
+            const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+            handleFiles(files);
+        });
 
-        <div className="space-y-6">
-          {/* 업로드 영역 */}
-          <label className="group relative flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-slate-300 rounded-xl cursor-pointer hover:border-yellow-400 hover:bg-yellow-50/30 transition-all">
-            <div className="flex flex-col items-center justify-center pt-5 pb-6">
-              <Upload className="w-10 h-10 text-slate-400 group-hover:text-yellow-500 mb-3 transition-colors" />
-              <p className="text-sm text-slate-600 font-medium">이미지 파일들을 선택하거나 드래그하세요</p>
-              <p className="text-xs text-slate-400 mt-1">PNG, JPG 지원</p>
-            </div>
-            <input 
-              type="file" 
-              className="hidden" 
-              multiple 
-              accept="image/*"
-              onChange={handleFileUpload}
-            />
-          </label>
+        fileInput.addEventListener('change', (e) => {
+            const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
+            handleFiles(files);
+        });
 
-          {/* 파일 목록 */}
-          {files.length > 0 && (
-            <div className="bg-slate-50 rounded-lg p-4 max-h-40 overflow-y-auto">
-              <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wider">대기 중인 파일 ({files.length})</p>
-              <div className="space-y-2">
-                {files.map((file, i) => (
-                  <div key={i} className="flex items-center text-sm text-slate-700 bg-white p-2 rounded border border-slate-200">
-                    <ImageIcon className="w-4 h-4 mr-2 text-slate-400" />
-                    <span className="truncate flex-1">{file.name}</span>
-                    <CheckCircle2 className="w-4 h-4 text-green-500 ml-2" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+        function handleFiles(files) {
+            if (files.length === 0) return;
+            selectedFiles = files;
+            updateUI();
+        }
 
-          {/* 에러 메시지 */}
-          {error && (
-            <div className="flex items-center p-3 text-sm text-red-600 bg-red-50 rounded-lg border border-red-100">
-              <AlertCircle className="w-4 h-4 mr-2" />
-              {error}
-            </div>
-          )}
+        function updateUI() {
+            fileList.innerHTML = '';
+            if (selectedFiles.length > 0) {
+                fileListContainer.classList.remove('hidden');
+                fileCountText.textContent = `대기 중인 파일 (${selectedFiles.length})`;
+                
+                selectedFiles.forEach(file => {
+                    const item = document.createElement('div');
+                    item.className = "flex items-center text-sm text-slate-700 bg-white p-2 rounded border border-slate-200";
+                    item.innerHTML = `
+                        <svg class="w-4 h-4 mr-2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        <span class="truncate flex-1">${file.name}</span>
+                        <svg class="w-4 h-4 text-green-500 ml-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                    `;
+                    fileList.appendChild(item);
+                });
 
-          {/* 실행 버튼 */}
-          <button
-            onClick={downloadResults}
-            disabled={files.length === 0 || isProcessing}
-            className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition-all flex items-center justify-center space-x-2
-              ${files.length === 0 || isProcessing 
-                ? 'bg-slate-300 cursor-not-allowed' 
-                : 'bg-yellow-400 hover:bg-yellow-500 active:scale-[0.98] shadow-yellow-200'}`}
-          >
-            {isProcessing ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <span>변환 중...</span>
-              </>
-            ) : (
-              <>
-                <FileDown className="w-5 h-5" />
-                <span>{files.length <= 1 ? '변환 및 다운로드' : '일괄 변환 및 ZIP 다운로드'}</span>
-              </>
-            )}
-          </button>
-        </div>
+                downloadBtn.disabled = false;
+                downloadBtn.classList.remove('bg-slate-300', 'cursor-not-allowed', 'shadow-none');
+                downloadBtn.classList.add('bg-yellow-400', 'hover:bg-yellow-500', 'shadow-yellow-200');
+                btnText.textContent = selectedFiles.length === 1 ? '변환 및 다운로드' : '일괄 변환 및 ZIP 다운로드';
+            } else {
+                fileListContainer.classList.add('hidden');
+                downloadBtn.disabled = true;
+                btnText.textContent = '파일을 업로드해주세요';
+            }
+        }
 
-        <div className="mt-8 pt-6 border-t border-slate-100 text-[11px] text-slate-400 leading-relaxed">
-          <p>• 규격: 360 x 360px (정사각형 변환)</p>
-          <p>• 파일 종류: PNG (투명 배경 보존)</p>
-          <p>• 용량 제한: 파일당 150KB 이하 자동 적용</p>
-          <p>• 다수 파일 업로드 시 하나의 ZIP으로 묶어 드립니다.</p>
-        </div>
-      </div>
-    </div>
-  );
-};
+        async function processImage(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        canvas.width = 360;
+                        canvas.height = 360;
+                        ctx.clearRect(0, 0, 360, 360);
+                        
+                        const scale = Math.min(360 / img.width, 360 / img.height);
+                        const x = (360 / 2) - (img.width / 2) * scale;
+                        const y = (360 / 2) - (img.height / 2) * scale;
+                        
+                        ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
 
-export default App;
+                        canvas.toBlob((blob) => {
+                            if (blob) {
+                                resolve({
+                                    blob,
+                                    name: file.name.replace(/\.[^/.]+$/, "") + ".png"
+                                });
+                            } else {
+                                reject(new Error("이미지 생성 실패"));
+                            }
+                        }, 'image/png');
+                    };
+                    img.onerror = () => reject(new Error(`${file.name} 이미지를 로드할 수 없습니다.`));
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        downloadBtn.addEventListener('click', async () => {
+            if (selectedFiles.length === 0) return;
+
+            // 로딩 상태 시작
+            downloadBtn.disabled = true;
+            errorMessage.classList.add('hidden');
+            const originalBtnContent = downloadBtn.innerHTML;
+            downloadBtn.innerHTML = '<div class="spinner mr-2"></div><span>변환 중...</span>';
+
+            try {
+                const processed = await Promise.all(selectedFiles.map(file => processImage(file)));
+
+                if (processed.length === 1) {
+                    const url = URL.createObjectURL(processed[0].blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = processed[0].name;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                } else {
+                    const zip = new JSZip();
+                    const nameCount = {};
+                    
+                    processed.forEach(item => {
+                        let finalName = item.name;
+                        if (nameCount[finalName]) {
+                            const parts = finalName.split('.');
+                            const ext = parts.pop();
+                            finalName = `${parts.join('.')}_${nameCount[finalName]}.${ext}`;
+                            nameCount[item.name]++;
+                        } else {
+                            nameCount[finalName] = 1;
+                        }
+                        zip.file(finalName, item.blob);
+                    });
+
+                    const content = await zip.generateAsync({ type: "blob" });
+                    const url = URL.createObjectURL(content);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = "kakao_emoticons_converted.zip";
+                    a.click();
+                    URL.revokeObjectURL(url);
+                }
+            } catch (err) {
+                errorMessage.classList.remove('hidden');
+                errorText.textContent = err.message;
+            } finally {
+                downloadBtn.disabled = false;
+                downloadBtn.innerHTML = originalBtnContent;
+            }
+        });
+    </script>
+</body>
+</html>
