@@ -1,0 +1,173 @@
+name: OpenBrain real MaleCNS run
+
+on:
+  push:
+    branches: [chatgpt-openbrain-run-20260927]
+    paths: [.github/workflows/openbrain-real-run.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  run-openbrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Fetch upstream OpenBrain
+        run: |
+          git clone --depth 1 https://github.com/kutlusoy/openbrain.git openbrain
+          cd openbrain
+          echo "OPENBRAIN_COMMIT=$(git rev-parse HEAD)" | tee ../upstream_commit.txt
+
+      - name: Install dependencies and Chromium
+        working-directory: openbrain
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Download official MaleCNS v1.0 connectome
+        working-directory: openbrain
+        run: |
+          mkdir -p data
+          BASE='https://storage.googleapis.com/flyem-male-cns/v1.0/connectome-data/flat-connectome'
+          curl -fL --retry 5 --retry-delay 3 "$BASE/body-annotations-male-cns-v1.0-minconf-0.5.feather" -o data/body-annotations.feather
+          curl -fL --retry 5 --retry-delay 3 "$BASE/body-neurotransmitters-male-cns-v1.0.feather" -o data/body-neurotransmitters.feather
+          curl -fL --retry 5 --retry-delay 3 "$BASE/connectome-weights-male-cns-v1.0-minconf-0.5.feather" -o data/connectome-weights.feather
+          sha256sum data/*.feather | tee data_sha256.txt
+          ls -lh data | tee data_sizes.txt
+
+      - name: Build measured connectome graph
+        working-directory: openbrain
+        run: |
+          /usr/bin/time -v python build_graph.py 2>&1 | tee build_graph.log
+          ls -lh build/graph.npz | tee graph_size.txt
+
+      - name: Run real connectome and dopamine learning smoke test
+        working-directory: openbrain
+        run: |
+          python - <<'PY' | tee brain_smoke.log
+          import json
+          from flysim import FlyBrain
+          from mushroom import MushroomBody
+
+          fb = FlyBrain()
+          mb = MushroomBody(fb)
+          print('NEURONS', fb.n)
+          print('SIGNED_EDGES', fb.W.nnz)
+          print('CELL_TYPES', fb.n_types)
+          print('KC_NEURONS', len(mb.kc))
+          print('MBON_NEURONS', len(mb.mbon))
+          print('LEARNING_BEFORE', json.dumps(mb.stats(), sort_keys=True))
+
+          drive = mb.kc[:min(512, len(mb.kc))]
+          out = fb.run({drive: 600.0}, steps=250, record={'mbon': mb.mbon}, seed=20260927, spike_log=True)
+          fired = out['_fired']
+          print('RUN_FIRED_NEURONS', len(fired))
+          print('RUN_SPIKES_PER_SEC', round(float(out['_spikes_per_sec']), 3))
+          print('RUN_MBON_NONZERO', int((out['mbon'] > 0).sum()))
+
+          mb.observe(fired)
+          changed = mb.dopamine(+1, amount=1.0)
+          mb.apply()
+          print('DOPAMINE_CHANGED_SYNAPSES', changed)
+          print('LEARNING_AFTER', json.dumps(mb.stats(), sort_keys=True))
+          mb.save()
+          PY
+
+      - name: Give it a sandboxed internet browser and reinforce navigation
+        working-directory: openbrain
+        shell: bash
+        run: |
+          export FLY_ALLOW_BROWSER=1
+          export FLY_ROAM_OPEN=0
+          export FLY_HOST=127.0.0.1
+          export PORT=4660
+
+          python roam.py --port 4660 > roam.log 2>&1 &
+          ROAM_PID=$!
+          trap 'kill $ROAM_PID 2>/dev/null || true' EXIT
+
+          for i in $(seq 1 120); do
+            if curl -fsS http://127.0.0.1:4660/status > status.json 2>/dev/null; then break; fi
+            sleep 1
+          done
+
+          echo 'STATUS'; cat status.json || true; echo
+
+          echo 'GOAL'
+          curl -fsS -X POST http://127.0.0.1:4660/goal \
+            -H 'content-type: application/json' \
+            -d '{"name":"learn safe link navigation","seeds":["https://en.wikipedia.org/wiki/Special:Random"],"allow":["en.wikipedia.org","en.m.wikipedia.org"],"deadline_s":120}' \
+            | tee goal_response.json || true
+          echo
+
+          sleep 35
+          curl -fsS http://127.0.0.1:4660/state | tee state_before_reward.json || true
+          echo
+
+          echo 'REWARD'
+          curl -fsS -X POST http://127.0.0.1:4660/reward \
+            -H 'content-type: application/json' \
+            -d '{"valence":1,"amount":0.7}' \
+            | tee reward_response.json || true
+          echo
+
+          sleep 20
+          curl -fsS http://127.0.0.1:4660/state | tee state_after_reward.json || true
+          echo
+
+          kill $ROAM_PID 2>/dev/null || true
+          wait $ROAM_PID 2>/dev/null || true
+          trap - EXIT
+          tail -n 160 roam.log
+
+      - name: Summarize proof
+        if: always()
+        working-directory: openbrain
+        run: |
+          {
+            echo '=== upstream ==='
+            cat ../upstream_commit.txt 2>/dev/null || true
+            echo '=== data ==='
+            cat data_sizes.txt 2>/dev/null || true
+            cat data_sha256.txt 2>/dev/null || true
+            echo '=== graph ==='
+            cat graph_size.txt 2>/dev/null || true
+            echo '=== brain ==='
+            cat brain_smoke.log 2>/dev/null || true
+            echo '=== browser state ==='
+            cat state_before_reward.json 2>/dev/null || true; echo
+            cat reward_response.json 2>/dev/null || true; echo
+            cat state_after_reward.json 2>/dev/null || true; echo
+          } | tee run_summary.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openbrain-real-run-evidence
+          path: |
+            upstream_commit.txt
+            openbrain/data_sizes.txt
+            openbrain/data_sha256.txt
+            openbrain/build_graph.log
+            openbrain/graph_size.txt
+            openbrain/brain_smoke.log
+            openbrain/status.json
+            openbrain/goal_response.json
+            openbrain/state_before_reward.json
+            openbrain/reward_response.json
+            openbrain/state_after_reward.json
+            openbrain/roam.log
+            openbrain/run_summary.txt
+            openbrain/build/mb_gains.npz
+          if-no-files-found: warn
+          retention-days: 3
