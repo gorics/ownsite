@@ -149,11 +149,11 @@ jobs:
             cat state_after_reward.json 2>/dev/null || true; echo
           } | tee run_summary.txt
 
-      - name: Upload evidence
+      - name: Upload evidence and local runtime
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: openbrain-real-run-evidence
+          name: openbrain-local-runtime
           path: |
             upstream_commit.txt
             openbrain/data_sizes.txt
@@ -168,6 +168,10 @@ jobs:
             openbrain/state_after_reward.json
             openbrain/roam.log
             openbrain/run_summary.txt
+            openbrain/build/graph.npz
             openbrain/build/mb_gains.npz
+            openbrain/*.py
+            openbrain/requirements.txt
+            openbrain/web/roam.html
           if-no-files-found: warn
           retention-days: 3
