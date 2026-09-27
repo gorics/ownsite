@@ -1,0 +1,63 @@
+name: FlyBrain TinySD Public Runner
+
+on:
+  push:
+    branches: [flybrain-tinysd-v3-run]
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout controller branch
+        uses: actions/checkout@v4
+        with:
+          ref: flybrain-tinysd-v3-run
+
+      - name: Checkout real fly brain runtime
+        uses: actions/checkout@v4
+        with:
+          repository: theflyRH/thefly-brain
+          ref: 4e9f4722c337e7d85cee3072ddb78bfa99234ca8
+          path: fly
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install fly-brain dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r fly/requirements.txt
+
+      - name: Download FlyWire v783 connectome
+        working-directory: fly
+        run: bash data/download.sh
+
+      - name: Install diffusion stack
+        run: |
+          pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+          pip install 'diffusers==0.35.1' 'transformers>=4.44,<5' 'accelerate>=1.0' safetensors huggingface_hub pillow
+
+      - name: Generate cat from full fly-brain condition
+        env:
+          PYTHONUNBUFFERED: '1'
+          HF_HUB_DISABLE_TELEMETRY: '1'
+          TOKENIZERS_PARALLELISM: 'false'
+        run: |
+          python flybrain_tinysd.py --fly-dir fly --prompt '고양이' --brain-ms 150 --steps 16 --size 384 --out output
+
+      - name: List outputs
+        if: always()
+        run: find output -maxdepth 2 -type f -printf '%p %k KB\n' 2>/dev/null || true
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flybrain-tinysd-public-output
+          path: output/
+          if-no-files-found: warn
+          compression-level: 6
