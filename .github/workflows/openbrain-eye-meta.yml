@@ -1,0 +1,51 @@
+name: OpenBrain eye metadata export
+
+on:
+  push:
+    branches: [chatgpt-openbrain-run-20260927]
+    paths: [.github/workflows/openbrain-eye-meta.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-eye-meta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install feather reader
+        run: python -m pip install --quiet numpy pandas pyarrow
+      - name: Download official MaleCNS annotations only
+        run: |
+          curl -fL --retry 5 --retry-delay 2 \
+            'https://storage.googleapis.com/flyem-male-cns/v1.0/connectome-data/flat-connectome/body-annotations-male-cns-v1.0-minconf-0.5.feather' \
+            -o annotations.feather
+          sha256sum annotations.feather | tee annotations_sha256.txt
+      - name: Export only retina/motor fields needed by FlyEye
+        run: |
+          python - <<'PY'
+          import numpy as np, pandas as pd
+          a = pd.read_feather('annotations.feather')
+          a = a.drop_duplicates('bodyId')
+          body = a['bodyId'].to_numpy(dtype=np.int64)
+          h1 = pd.to_numeric(a['assignedOlHex1'], errors='coerce').to_numpy(dtype=np.float32)
+          h2 = pd.to_numeric(a['assignedOlHex2'], errors='coerce').to_numpy(dtype=np.float32)
+          side = a['somaSide'].fillna('').astype(str).to_numpy(dtype='U8')
+          order = np.argsort(body)
+          np.savez_compressed('eye_meta.npz', body=body[order], h1=h1[order], h2=h2[order], side=side[order])
+          print('ANNOTATED_BODIES', len(body))
+          print('HEX_COORD_BODIES', int((~np.isnan(h1) & ~np.isnan(h2)).sum()))
+          print('OUT_BYTES', __import__('pathlib').Path('eye_meta.npz').stat().st_size)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openbrain-eye-meta
+          path: |
+            eye_meta.npz
+            annotations_sha256.txt
+          retention-days: 3
