@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FlyBrain Painter — Browser Runtime</title>
+<style>
+:root{color-scheme:dark;background:#0a0d12;color:#e8edf5;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+*{box-sizing:border-box} body{margin:0;min-height:100vh;background:radial-gradient(circle at 20% 0,#17213a 0,#0a0d12 38%)}
+header{padding:18px 20px;border-bottom:1px solid #273246;display:flex;justify-content:space-between;align-items:center}
+h1{font-size:18px;margin:0}.badge{font-size:12px;padding:6px 9px;border:1px solid #36507a;border-radius:99px;background:#111827}
+main{display:grid;grid-template-columns:360px 1fr;gap:14px;padding:14px;min-height:calc(100vh - 65px)}
+.panel{border:1px solid #273246;border-radius:14px;background:#0e141fdd;padding:14px}
+label{display:block;font-size:12px;color:#9fb0ca;margin:12px 0 6px}
+textarea,input,button{width:100%;font:inherit;border-radius:10px;border:1px solid #33425c;background:#0a101a;color:#eef;padding:10px}
+textarea{min-height:100px;resize:vertical} button{cursor:pointer;background:#16233a} button:hover{background:#1b2d4b}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.stat{padding:10px;border-radius:10px;background:#0a101a;border:1px solid #273246}.k{font-size:11px;color:#8ea1bd}.v{font-size:18px;margin-top:3px}
+canvas{width:100%;height:100%;min-height:560px;border-radius:12px;background:#05070a}
+.log{height:170px;overflow:auto;white-space:pre-wrap;font-size:11px;line-height:1.45;background:#070a0f;border:1px solid #273246;border-radius:10px;padding:9px;margin-top:12px}
+.small{font-size:11px;color:#7f91ad;line-height:1.5;margin-top:10px}
+@media(max-width:900px){main{grid-template-columns:1fr}canvas{min-height:420px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>FlyBrain Painter — Browser Runtime</h1>
+  <div class="badge" id="mode">NO SERVER · CLIENT-SIDE</div>
+</header>
+<main>
+<section class="panel">
+  <label>그림 지시</label>
+  <textarea id="prompt">수능 수학을 공부하는 초파리 뇌를 사이버펑크 회로처럼 그려</textarea>
+
+  <div class="row">
+    <div>
+      <label>뉴런 수</label>
+      <input id="neurons" type="number" min="64" max="2000" value="480">
+    </div>
+    <div>
+      <label>시뮬레이션 속도</label>
+      <input id="speed" type="number" min="1" max="30" value="8">
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:12px">
+    <button id="run">실행 / 재시작</button>
+    <button id="save">PNG 저장</button>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="k">FRAME</div><div class="v" id="frame">0</div></div>
+    <div class="stat"><div class="k">ACTIVE</div><div class="v" id="active">0</div></div>
+    <div class="stat"><div class="k">ENERGY</div><div class="v" id="energy">0.00</div></div>
+    <div class="stat"><div class="k">LATENCY</div><div class="v" id="latency">0 ms</div></div>
+  </div>
+
+  <div class="log" id="log"></div>
+  <div class="small">
+    이 파일은 외부 서버에 접속하지 않는다. 렌더링·상태 업데이트·PNG 생성은 전부 이 브라우저 탭 내부에서 수행된다.
+  </div>
+</section>
+
+<section class="panel" style="padding:8px">
+  <canvas id="c"></canvas>
+</section>
+</main>
+
+<script>
+const c=document.getElementById('c'),ctx=c.getContext('2d');
+const $=id=>document.getElementById(id);
+let nodes=[], edges=[], frame=0, raf=null, seed=1, last=performance.now();
+
+function hash(s){let h=2166136261>>>0;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return h>>>0}
+function rnd(){seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296}
+function resize(){const d=devicePixelRatio||1, r=c.getBoundingClientRect(); c.width=Math.max(1,r.width*d); c.height=Math.max(1,r.height*d); ctx.setTransform(d,0,0,d,0,0)}
+addEventListener('resize',resize);
+
+function log(s){const el=$('log'); el.textContent+=`[${new Date().toLocaleTimeString()}] ${s}\n`; el.scrollTop=el.scrollHeight}
+
+function init(){
+  cancelAnimationFrame(raf); frame=0; $('log').textContent='';
+  seed=hash($('prompt').value||'flybrain');
+  const n=Math.max(64,Math.min(2000,+$('neurons').value||480));
+  resize(); const r=c.getBoundingClientRect(), w=r.width,h=r.height;
+  nodes=Array.from({length:n},(_,i)=>{
+    const a=rnd()*Math.PI*2, rad=Math.pow(rnd(),.62)*Math.min(w,h)*.39;
+    return {x:w/2+Math.cos(a)*rad*1.18,y:h/2+Math.sin(a)*rad*.78,
+      v:rnd(),phase:rnd()*6.283,f:.35+rnd()*1.8,size:.6+rnd()*2.2}
+  });
+  edges=[];
+  for(let i=0;i<n;i++){
+    const k=2+(rnd()*5|0);
+    for(let j=0;j<k;j++){
+      const t=(i+1+(rnd()*Math.min(90,n-1)|0))%n;
+      if(rnd()<.72) edges.push([i,t,rnd()]);
+    }
+  }
+  log(`runtime boot: ${n} neurons / ${edges.length} synapses`);
+  log(`prompt hash: 0x${seed.toString(16)}`);
+  log('ingress bypass: computation moved to browser');
+  last=performance.now(); loop();
+}
+function loop(){
+  const t0=performance.now(), r=c.getBoundingClientRect(), w=r.width,h=r.height;
+  ctx.fillStyle='rgba(5,7,10,.18)';ctx.fillRect(0,0,w,h);
+  const speed=Math.max(1,Math.min(30,+$('speed').value||8));
+  let active=0, energy=0;
+  for(const [a,b,q] of edges){
+    const A=nodes[a],B=nodes[b];
+    const pulse=(Math.sin(frame*.018*speed + A.phase*3 + q*5)+1)/2;
+    if(pulse>.91){
+      ctx.globalAlpha=.05+.22*pulse;ctx.beginPath();ctx.moveTo(A.x,A.y);ctx.lineTo(B.x,B.y);
+      ctx.strokeStyle=`hsl(${185+q*90} 80% ${45+pulse*35}%)`;ctx.stroke();
+    }
+  }
+  ctx.globalAlpha=1;
+  for(let i=0;i<nodes.length;i++){
+    const p=nodes[i], signal=(Math.sin(frame*.022*speed*p.f+p.phase)+1)/2;
+    p.v=p.v*.92+signal*.08; energy+=p.v;
+    if(p.v>.72) active++;
+    const rr=p.size*(.65+p.v*1.9);
+    ctx.beginPath();ctx.arc(p.x,p.y,rr,0,Math.PI*2);
+    ctx.fillStyle=`hsl(${195+p.v*115} 86% ${42+p.v*30}%)`;ctx.fill();
+  }
+  ctx.globalAlpha=.16;
+  for(let k=0;k<5;k++){
+    ctx.beginPath();
+    ctx.ellipse(w/2+(k-2)*w*.055,h/2+Math.sin(k)*h*.025,w*.12,h*.11,Math.sin(k*.7)*.35,0,Math.PI*2);
+    ctx.strokeStyle=`hsl(${210+k*18} 90% 68%)`;ctx.lineWidth=1.5;ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+  ctx.font='12px ui-monospace,monospace';ctx.fillStyle='#b8c7dd';
+  ctx.fillText($('prompt').value.slice(0,90),14,h-18);
+  frame++;
+  $('frame').textContent=frame.toLocaleString();
+  $('active').textContent=active.toLocaleString();
+  $('energy').textContent=(energy/nodes.length).toFixed(2);
+  $('latency').textContent=(performance.now()-t0).toFixed(1)+' ms';
+  raf=requestAnimationFrame(loop);
+}
+$('run').onclick=init;
+$('save').onclick=()=>{
+  const a=document.createElement('a');
+  a.download='flybrain-painter.png';
+  a.href=c.toDataURL('image/png');a.click();log('PNG exported locally');
+};
+init();
+</script>
+</body>
+</html>
