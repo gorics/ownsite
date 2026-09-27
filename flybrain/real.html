@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>FlyWire v783 — Real Connectome Runtime</title>
+<style>
+:root{color-scheme:dark;--bg:#070a10;--panel:#0d1420e8;--line:#24334d;--muted:#8fa4c4;--text:#eaf1ff;--hot:#fff;--accent:#7cc7ff}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+body{background:radial-gradient(circle at 18% 0,#15243c 0,#070a10 36%,#05070b 100%)}
+header{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#070a10ee;backdrop-filter:blur(10px);z-index:3}
+h1{font-size:15px;margin:0;font-weight:750}.badge{border:1px solid #33547d;border-radius:999px;padding:5px 8px;font-size:10px;color:#bfe1ff;white-space:nowrap}
+main{display:grid;grid-template-columns:390px minmax(0,1fr);gap:12px;padding:12px;min-height:calc(100vh - 58px)}
+.panel{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:12px;min-width:0}
+.controls{overflow:auto;max-height:calc(100vh - 82px)}
+section+section{margin-top:14px;padding-top:12px;border-top:1px solid #1e2a3d}h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#9fb4d2;margin:0 0 9px}
+button,select,input{width:100%;border:1px solid #334764;background:#0a101a;color:#edf5ff;border-radius:9px;padding:9px;font:inherit;font-size:12px}
+button{cursor:pointer}button:hover{background:#13223a}button.primary{background:#173255;border-color:#396895}button.danger{background:#3b1720;border-color:#6f2f3e}
+button:disabled{opacity:.45;cursor:not-allowed}.row{display:grid;grid-template-columns:1fr 1fr;gap:7px}.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
+label{display:block;font-size:10px;color:var(--muted);margin:8px 0 5px}.small{font-size:10px;color:#8da0ba;line-height:1.45}.status{font-size:11px;line-height:1.5;color:#b9cbe4;background:#070b12;border:1px solid #1d2a40;border-radius:9px;padding:8px;min-height:43px}
+.progress{height:7px;border:1px solid #24334d;border-radius:99px;overflow:hidden;background:#080d15;margin-top:7px}.progress>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#4aa4ff,#a875ff);transition:width .15s}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}.stat{background:#080d15;border:1px solid #1e2c43;border-radius:9px;padding:8px}.stat .k{font-size:9px;color:#7990af}.stat .v{font-size:15px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.log{height:145px;overflow:auto;white-space:pre-wrap;font-size:9px;line-height:1.45;background:#05080d;border:1px solid #1c283b;border-radius:9px;padding:8px}
+.stage{padding:0;overflow:hidden;position:relative;min-height:640px}.stage canvas{width:100%;height:100%;min-height:640px;display:block;background:radial-gradient(circle at 50% 45%,#0b1726 0,#05080e 58%,#020305 100%)}
+.overlay{position:absolute;left:10px;top:10px;right:10px;display:flex;justify-content:space-between;pointer-events:none;font-size:10px;color:#9cb0c9;text-shadow:0 1px 2px #000}.legend{position:absolute;left:12px;bottom:10px;font-size:9px;line-height:1.5;color:#9fb0c6;background:#05080dcc;border:1px solid #1e2a3e;border-radius:8px;padding:7px;pointer-events:none}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px}.warn{color:#ffbe8f}.ok{color:#97f7bb}
+@media(max-width:920px){main{grid-template-columns:1fr}.controls{max-height:none}.stage,.stage canvas{min-height:520px}}
+</style>
+</head>
+<body>
+<header><h1>FlyWire v783 · Real Connectome Runtime</h1><div class="badge">REAL WIRING · BROWSER COMPUTE</div></header>
+<main>
+<aside class="panel controls">
+<section>
+<h2>1 · 데이터</h2>
+<div class="row"><button id="loadNeurons" class="primary">실제 뉴런 4.2MB 로드</button><button id="loadFull" class="primary">전체 뇌 94.7MB 로드</button></div>
+<div class="status" id="loadStatus">대기 중. 실제 FlyWire FAFB v783 데이터는 버튼을 누르면 GitHub에서 브라우저로 직접 들어온다.</div>
+<div class="progress"><i id="bar"></i></div>
+<div class="small" style="margin-top:7px">배선 데이터: 139,255 neurons · 15,091,983 directed edges · 54,492,922 synapses. Full 모드는 연결 바이너리 약 90.6MB를 추가 로드한다.</div>
+</section>
+<section>
+<h2>2 · 실제 회로 자극</h2>
+<label>뉴런 집단</label><select id="stimGroup" disabled><option value="role:1">LC4 · looming</option><option value="role:2">LPLC2 · looming</option><option value="role:3">GF · giant fiber</option><option value="role:4">DNa01 · steering</option><option value="role:5">DNa02 · steering</option><option value="role:6">DNp09 · walking</option><option value="role:7">DNg11 · grooming</option><option value="role:8">MDN · backward</option><option value="super:sensory">sensory superclass</option><option value="super:descending">descending superclass</option></select>
+<div class="row" style="margin-top:7px"><button id="pulse" disabled>펄스 주입</button><button id="auto" disabled>자동 전파: OFF</button></div>
+<label>발화 임계값 (weighted synapse input)</label><input id="threshold" type="range" min="5" max="120" value="28" /><div class="small">threshold = <span id="thresholdV">28</span>. 실제 연결 가중치 위에 단순 threshold propagation을 얹는다.</div>
+<label>최대 동시 발화 뉴런</label><input id="cap" type="range" min="100" max="5000" step="100" value="1600" /><div class="small">cap = <span id="capV">1600</span> · 폭주 시 상위 입력만 유지.</div>
+<div class="row" style="margin-top:7px"><button id="step" disabled>1 step</button><button id="clear" disabled>활성 초기화</button></div>
+</section>
+<section>
+<h2>3 · 뷰</h2>
+<div class="row3"><button class="proj" data-p="xy">XY</button><button class="proj" data-p="xz">XZ</button><button class="proj" data-p="yz">YZ</button></div>
+<label>표시 뉴런 수</label><input id="renderN" type="range" min="1000" max="16000" step="1000" value="7000" /><div class="small">sample = <span id="renderNV">7000</span> + 현재 발화 뉴런</div>
+</section>
+<section>
+<h2>상태</h2>
+<div class="stats"><div class="stat"><div class="k">NEURONS</div><div class="v" id="sN">0</div></div><div class="stat"><div class="k">EDGES</div><div class="v" id="sE">0</div></div><div class="stat"><div class="k">ACTIVE</div><div class="v" id="sA">0</div></div><div class="stat"><div class="k">STEP</div><div class="v" id="sStep">0</div></div><div class="stat"><div class="k">TRAVERSED</div><div class="v" id="sTrav">0</div></div><div class="stat"><div class="k">DATA</div><div class="v" id="sData">0 MB</div></div></div>
+</section>
+<section><h2>로그</h2><div id="log" class="log"></div></section>
+<section><div class="small"><span class="ok">실제:</span> FlyWire v783 뉴런 위치/분류/신경전달물질/방향성 연결/시냅스 수. <span class="warn">단순화:</span> 막전위·시간상수·임계값·외부 감각 입력은 이 데모의 계산 모델이며 실제 생리 측정값이 아니다. 데이터는 CC BY-NC 4.0 계열 조건에 따라 비상업적 용도로 사용.</div></section>
+</aside>
+<section class="panel stage"><canvas id="brain"></canvas><div class="overlay"><span id="viewLabel">projection XY</span><span id="fps">0 fps</span></div><div class="legend"><span class="dot" style="background:#68c7ff"></span>sampled real neuron<br><span class="dot" style="background:#fff"></span>spiking neuron<br><span class="dot" style="background:#ff7f8c"></span>inhibitory edge sample</div></section>
+</main>
+<script>
+'use strict';
+const DATA_COMMIT='8839d84cd24888a4251a2e227792b6f26fbee776';
+const BASE=`https://raw.githubusercontent.com/dawsonamf/siliconfly/${DATA_COMMIT}/data/`;
+const $=id=>document.getElementById(id), logEl=$('log');
+function log(s){logEl.textContent+=`[${new Date().toLocaleTimeString()}] ${s}\n`;logEl.scrollTop=logEl.scrollHeight}
+function status(s){$('loadStatus').textContent=s}
+function mb(x){return (x/1048576).toFixed(1)}
+let manifest=null, neuronBuf=null, synBuf=null, arrays={}, tables={}, roles=[], roleIndices=[], superIndices={}, loadedBytes=0;
+let active=[], activeSet=new Set(), simStep=0, traversed=0, autoTimer=null, projection='xy', sample=[], lastEdges=[];
+let accum=null, stamp=null, stampId=1;
+const canvas=$('brain'), ctx=canvas.getContext('2d',{alpha:false});
+let dpr=1,lastFrame=performance.now(),frames=0,fps=0;
+async function fetchProgress(url,label){
+  log(`fetch ${label}`); status(`${label} 다운로드 중…`); $('bar').style.width='2%';
+  const r=await fetch(url,{cache:'force-cache'}); if(!r.ok) throw new Error(`${label}: HTTP ${r.status}`);
+  const total=+(r.headers.get('content-length')||0); if(!r.body){const b=await r.arrayBuffer();loadedBytes+=b.byteLength;return b}
+  const reader=r.body.getReader(),chunks=[];let got=0;
+  while(true){const {done,value}=await reader.read();if(done)break;chunks.push(value);got+=value.byteLength;if(total)$('bar').style.width=`${Math.min(99,got/total*100)}%`;status(`${label}: ${mb(got)}${total?' / '+mb(total):''} MB`)}
+  const out=new Uint8Array(got);let o=0;for(const ch of chunks){out.set(ch,o);o+=ch.byteLength}loadedBytes+=got;$('sData').textContent=mb(loadedBytes)+' MB';$('bar').style.width='100%';return out.buffer;
+}
+async function fetchJSON(url){const r=await fetch(url,{cache:'force-cache'});if(!r.ok)throw new Error(`manifest HTTP ${r.status}`);return r.json()}
+function rec(name){const r=manifest.arrays[name];if(!r)throw new Error('missing array '+name);return r}
+function viewFor(name,buf){const r=rec(name), n=r.count, o=r.byteOffset;switch(r.dtype){case'float32':return new Float32Array(buf,o,n);case'uint8':return new Uint8Array(buf,o,n);case'uint16':return new Uint16Array(buf,o,n);case'uint32':return new Uint32Array(buf,o,n);case'int16':return new Int16Array(buf,o,n);case'uint64':return new BigUint64Array(buf,o,n);default:throw new Error('dtype '+r.dtype)}}
+async function loadNeurons(){
+  try{
+    if(!manifest){status('manifest 로드…');manifest=await fetchJSON(BASE+'connectome.json');tables=manifest.stringTables;roles=tables.roles;log(`manifest: ${manifest.neuronCount.toLocaleString()} neurons / ${manifest.edgeCount.toLocaleString()} edges / ${manifest.synapseTotal.toLocaleString()} synapses`)}
+    if(!neuronBuf){neuronBuf=await fetchProgress(BASE+'neurons.bin','neurons.bin');}
+    for(const n of ['pos','superClass','side','nt','role','cellType','rootId','rowStart']) arrays[n]=viewFor(n,neuronBuf);
+    const N=manifest.neuronCount; roleIndices=Array.from({length:roles.length},()=>[]);superIndices={};
+    for(let i=0;i<N;i++){roleIndices[arrays.role[i]].push(i);const sc=tables.superClasses[arrays.superClass[i]];if(!superIndices[sc])superIndices[sc]=[];superIndices[sc].push(i)}
+    accum=new Float32Array(N);stamp=new Uint32Array(N);makeSample();
+    $('sN').textContent=N.toLocaleString();$('stimGroup').disabled=false;$('clear').disabled=false;status('실제 뉴런 데이터 로드 완료. 전체 연결을 쓰려면 Full load.');
+    log(`neurons ready; behavioral-role neurons = ${roleIndices.slice(1).reduce((a,x)=>a+x.length,0)}`);log('positions / classes / neurotransmitters / roles / root IDs / CSR row pointers loaded');draw();
+  }catch(e){status('실패: '+e.message);log('ERROR '+e.stack)}
+}
+async function loadFull(){
+  try{await loadNeurons();if(!synBuf){synBuf=await fetchProgress(BASE+'synapses.bin','synapses.bin (full real edges)');arrays.colIdx=viewFor('colIdx',synBuf);arrays.weight=viewFor('weight',synBuf);$('sE').textContent=manifest.edgeCount.toLocaleString();log('FULL CONNECTOME READY: signed real edge list mapped in browser memory')}
+    $('pulse').disabled=false;$('step').disabled=false;$('auto').disabled=false;status('전체 FlyWire v783 배선 로드 완료. 실제 연결 위에서 전파 가능.');
+  }catch(e){status('실패: '+e.message);log('ERROR '+e.stack)}
+}
+function makeSample(){if(!manifest)return;const N=manifest.neuronCount,n=+$('renderN').value;sample=[];const stride=Math.max(1,Math.floor(N/n));for(let i=0;i<N&&sample.length<n;i+=stride)sample.push(i);for(let r=1;r<roleIndices.length;r++)for(const i of roleIndices[r])sample.push(i);sample=[...new Set(sample)];}
+function currentGroup(){const v=$('stimGroup').value,[k,x]=v.split(':');if(k==='role')return roleIndices[+x]||[];return superIndices[x]||[]}
+function pulse(){if(!synBuf)return;let g=currentGroup();const max=+$('cap').value;if(g.length>max){const step=Math.ceil(g.length/max);g=g.filter((_,i)=>i%step===0).slice(0,max)}active=[...g];activeSet=new Set(active);$('sA').textContent=active.length.toLocaleString();log(`pulse: ${$('stimGroup').selectedOptions[0].text} -> ${active.length} neurons`);draw()}
+function propagate(){if(!synBuf||!active.length){active=[];activeSet.clear();$('sA').textContent='0';return}
+  const col=arrays.colIdx,w=arrays.weight,row=arrays.rowStart,th=+$('threshold').value,cap=+$('cap').value;stampId++;if(stampId===0xffffffff){stamp.fill(0);stampId=1}
+  const touched=[],edgeVis=[];let tv=0;
+  for(const pre of active){const a=row[pre],b=row[pre+1];tv+=b-a;for(let k=a;k<b;k++){const post=col[k];if(stamp[post]!==stampId){stamp[post]=stampId;accum[post]=0;touched.push(post)}accum[post]+=w[k];if(edgeVis.length<1300&&((k-a)%Math.max(1,Math.floor((b-a)/3))===0))edgeVis.push([pre,post,w[k]])}}
+  let next=[];for(const i of touched)if(accum[i]>=th)next.push(i);if(next.length>cap){next.sort((a,b)=>accum[b]-accum[a]);next.length=cap}
+  active=next;activeSet=new Set(next);lastEdges=edgeVis;simStep++;traversed+=tv;$('sA').textContent=next.length.toLocaleString();$('sStep').textContent=simStep.toLocaleString();$('sTrav').textContent=traversed.toLocaleString();draw();
+}
+function clearActive(){active=[];activeSet.clear();lastEdges=[];simStep=0;traversed=0;$('sA').textContent='0';$('sStep').textContent='0';$('sTrav').textContent='0';draw()}
+function toggleAuto(){if(autoTimer){clearInterval(autoTimer);autoTimer=null;$('auto').textContent='자동 전파: OFF'}else{autoTimer=setInterval(()=>{if(!active.length){pulse();return}propagate()},180);$('auto').textContent='자동 전파: ON'}}
+function resize(){const r=canvas.getBoundingClientRect();dpr=Math.min(2,devicePixelRatio||1);canvas.width=Math.max(1,Math.floor(r.width*dpr));canvas.height=Math.max(1,Math.floor(r.height*dpr));ctx.setTransform(dpr,0,0,dpr,0,0);draw()}
+function coords(i){const p=arrays.pos;if(!p)return[0,0];const a=p[i*3],b=p[i*3+1],c=p[i*3+2];return projection==='xy'?[a,b]:projection==='xz'?[a,c]:[b,c]}
+let bounds=null;
+function calcBounds(){if(!arrays.pos||!sample.length)return;let minx=Infinity,maxx=-Infinity,miny=Infinity,maxy=-Infinity;const n=Math.min(sample.length,12000);for(let q=0;q<n;q++){const [x,y]=coords(sample[q]);if(!Number.isFinite(x+y))continue;minx=Math.min(minx,x);maxx=Math.max(maxx,x);miny=Math.min(miny,y);maxy=Math.max(maxy,y)}bounds={minx,maxx,miny,maxy};}
+function screen(i,w,h){if(!bounds)calcBounds();const [x,y]=coords(i),pad=24,sx=(w-pad*2)/(bounds.maxx-bounds.minx||1),sy=(h-pad*2)/(bounds.maxy-bounds.miny||1),s=Math.min(sx,sy);return[pad+(x-bounds.minx)*s,h-pad-(y-bounds.miny)*s]}
+function classHue(i){const sc=arrays.superClass?arrays.superClass[i]:0;return(195+sc*27)%360}
+function draw(){const r=canvas.getBoundingClientRect(),w=r.width,h=r.height;if(!w||!h)return;ctx.fillStyle='#04070b';ctx.fillRect(0,0,w,h);if(!arrays.pos){ctx.fillStyle='#91a8c8';ctx.font='13px ui-monospace,monospace';ctx.fillText('Load real FlyWire neurons to begin',24,36);return}calcBounds();
+  if(lastEdges.length){ctx.lineWidth=.55;for(const [a,b,ww] of lastEdges){const [x1,y1]=screen(a,w,h),[x2,y2]=screen(b,w,h);ctx.globalAlpha=.12;ctx.strokeStyle=ww<0?'#ff7384':'#69bfff';ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke()}ctx.globalAlpha=1}
+  const n=Math.min(sample.length,+$('renderN').value+1000);for(let q=0;q<n;q++){const i=sample[q],[x,y]=screen(i,w,h);ctx.fillStyle=`hsl(${classHue(i)} 75% 62%)`;ctx.globalAlpha=.36;ctx.fillRect(x,y,1.35,1.35)}ctx.globalAlpha=1;
+  for(const i of active.slice(0,5000)){const [x,y]=screen(i,w,h);ctx.beginPath();ctx.arc(x,y,2.2,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill()}
+  $('viewLabel').textContent=`projection ${projection.toUpperCase()} · ${manifest.neuronCount.toLocaleString()} real neurons`;frames++;const now=performance.now();if(now-lastFrame>700){fps=Math.round(frames*1000/(now-lastFrame));frames=0;lastFrame=now;$('fps').textContent=fps+' fps'}
+}
+$('loadNeurons').onclick=loadNeurons;$('loadFull').onclick=loadFull;$('pulse').onclick=pulse;$('step').onclick=propagate;$('clear').onclick=clearActive;$('auto').onclick=toggleAuto;
+$('threshold').oninput=e=>$('thresholdV').textContent=e.target.value;$('cap').oninput=e=>$('capV').textContent=e.target.value;$('renderN').oninput=e=>{$('renderNV').textContent=e.target.value;makeSample();draw()};
+document.querySelectorAll('.proj').forEach(b=>b.onclick=()=>{projection=b.dataset.p;bounds=null;draw()});
+addEventListener('resize',resize);resize();setInterval(draw,1000/12);
+log('runtime ready');log(`data pin: dawsonamf/siliconfly @ ${DATA_COMMIT.slice(0,12)}`);log('click “전체 뇌 94.7MB 로드” for real signed connectivity');
+</script>
+</body></html>
