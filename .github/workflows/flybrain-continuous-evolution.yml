@@ -4,6 +4,10 @@ on:
   schedule:
     - cron: '7,37 * * * *'
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/flybrain-continuous-evolution.yml'
 
 permissions:
   contents: read
@@ -29,15 +33,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: flybrain-evolution-unified-20260929
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Install structural evolution runtime
         run: pip install numpy
-
       - name: Restore latest evolving genome
         id: restore
         uses: actions/cache/restore@v4
@@ -46,10 +47,8 @@ jobs:
           key: flybrain-state-v1-${{ github.run_id }}
           restore-keys: |
             flybrain-state-v1-
-
       - name: Clone canonical open-source FlyBrain
         run: git clone --depth 1 https://github.com/snedea/flybrain.git flybrain-src
-
       - name: Continue Darwinian structural evolution
         run: |
           python -u tools/flybrain_continuous_evolve.py | tee continuous-evolution.log
@@ -63,13 +62,11 @@ jobs:
           assert r['structural_genome']['new_edges']>0
           print('persistent cycle=',r['cycle'],'total_generations=',r['total_generations'])
           PY
-
       - name: Save genome for next evolutionary cycle
         uses: actions/cache/save@v4
         with:
           path: flybrain-state
           key: flybrain-state-v1-${{ github.run_id }}
-
       - name: Publish this generation snapshot
         uses: actions/upload-artifact@v4
         with:
