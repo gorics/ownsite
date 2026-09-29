@@ -6,7 +6,7 @@ injected into BOTH the LLM token stream and Stable-Diffusion text conditioning, 
 same shared tissue is optimized jointly against language and diffusion losses.
 """
 from __future__ import annotations
-import argparse, gzip, json, struct, time
+import argparse, gzip, hashlib, json, struct, time
 from pathlib import Path
 import numpy as np
 import torch
@@ -19,7 +19,9 @@ LLM_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
 SD_ID = "diffusers/tiny-stable-diffusion-torch"
 
 def load_fly(connectome: Path, meta: Path):
-    raw = gzip.open(connectome, "rb").read()
+    raw_gz = connectome.read_bytes()
+    source_sha256 = hashlib.sha256(raw_gz).hexdigest()
+    raw = gzip.decompress(raw_gz)
     n, e = struct.unpack_from("<II", raw, 0)
     dt = np.dtype([("pre", "<u4"), ("post", "<u4"), ("w", "<f4")])
     ed = np.frombuffer(raw, dtype=dt, count=e, offset=8)
@@ -34,7 +36,7 @@ def load_fly(connectome: Path, meta: Path):
     np.add.at(W, (sg, dg), ed["w"].astype(np.float32))
     den = np.maximum(np.sum(np.abs(W), axis=1, keepdims=True), 1.0)
     W /= den
-    return n, e, names, torch.from_numpy(W)
+    return n, e, names, torch.from_numpy(W), source_sha256
 
 def fly_dynamics(W: torch.Tensor, names, steps=18):
     name_to_i = {n:i for i,n in enumerate(names)}
@@ -126,7 +128,7 @@ def main():
     torch.manual_seed(a.seed); np.random.seed(a.seed)
     torch.set_num_threads(max(1,min(4,torch.get_num_threads())))
     out=Path(a.out); out.mkdir(parents=True,exist_ok=True); started=time.time()
-    n,e,names,W=load_fly(Path(a.connectome),Path(a.meta))
+    n,e,names,W,source_sha256=load_fly(Path(a.connectome),Path(a.meta))
     fly_state=fly_dynamics(W,names)[:,-1,:]
     tok=AutoTokenizer.from_pretrained(LLM_ID)
     llm=AutoModelForCausalLM.from_pretrained(LLM_ID, torch_dtype=torch.float32)
@@ -150,7 +152,7 @@ def main():
     image_size=generate_image(org,pipe,latent,image_prompt,out/'sample.png')
     torch.save({'genome':org.genome.detach(),'fly_encoder':org.fly_encoder.state_dict(),
                 'to_llm':org.to_llm.state_dict(),'to_sd':org.to_sd.state_dict()},out/'fusion_tissue.pt')
-    result={'source_connectome':{'neurons':n,'edges':e,'groups':len(names)},
+    result={'source_connectome':{'neurons':n,'edges':e,'groups':len(names),'compressed_sha256':source_sha256},
             'models':{'llm':LLM_ID,'stable_diffusion':SD_ID},
             'architecture':'single nn.Module organism; shared heritable latent injected into both LLM and SD conditioning',
             'base_organs_frozen':True,'trained_tissue':['fly_encoder','genome','to_llm','to_sd'],
