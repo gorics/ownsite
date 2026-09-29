@@ -12,6 +12,7 @@ compact=json.loads(gzip.decompress(base64.b64decode(B64)).decode())
 groups=compact['groups']; A=np.array(compact['A_scaled'],dtype=np.float32); sizes=np.array(compact['sizes'],dtype=np.float32)
 G=len(groups)
 
+# 1) train connectome dynamics adapter on recurrent trajectories
 sens=[i for i,g in enumerate(groups) if (g.startswith('VIS_') or g.startswith('OLF_') or g.startswith('MECH_') or g.startswith('THERMO_')) and sizes[i]>0]
 drives=[i for i,g in enumerate(groups) if g.startswith('DRIVE_') and sizes[i]>0]
 T=6000; X=np.zeros((T,G),np.float32); Y=np.zeros((T,G),np.float32); x=np.zeros(G,np.float32)
@@ -38,6 +39,7 @@ with torch.no_grad():
     val=nn.functional.mse_loss(adapter(xv)[0],yv).item(); base=nn.functional.mse_loss(.88*xv,yv).item()
 torch.save(adapter.state_dict(),OUT/'brain_adapter.pt')
 
+# deterministic brain state to drive both models
 state=np.zeros(G,np.float32)
 def ix(n): return groups.index(n) if n in groups else None
 for step in range(10):
@@ -52,21 +54,24 @@ top=np.argsort(np.abs(state))[-10:][::-1]
 brain_summary=', '.join(f'{groups[i]}={state[i]:.3f}' for i in top)
 latent_sig=float(np.mean(latent)); latent_energy=float(np.mean(latent**2))
 
+# 2) load + lightly LoRA-finetune an open LLM on brain-state-to-description examples
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import LoraConfig, get_peft_model
-llm_id='HuggingFaceTB/SmolLM2-135M-Instruct'
+llm_id='HuggingFaceTB/SmolLM2-360M-Instruct'
 tok=AutoTokenizer.from_pretrained(llm_id)
 model=AutoModelForCausalLM.from_pretrained(llm_id)
 model.config.use_cache=False
 lora=LoraConfig(r=4,lora_alpha=8,lora_dropout=0.0,bias='none',task_type='CAUSAL_LM',target_modules=['q_proj','v_proj'])
 model=get_peft_model(model,lora); model.train()
 train_texts=[]
-for k in range(12):
-    s=state.copy(); s += np.random.normal(0,.03,G).astype(np.float32)
+for k in range(24):
+    s=state.copy(); s += np.random.normal(0,.04,G).astype(np.float32)
     ti=np.argsort(np.abs(s))[-5:][::-1]
     labels=', '.join(groups[i] for i in ti)
-    train_texts.append(f'FlyBrain state: {labels}.\nAssistant: Dominant connectome activity is concentrated in {labels}.')
-optim=torch.optim.AdamW(model.parameters(),lr=7e-4)
+    train_texts.append(
+        f'FlyBrain state: {labels}.\nAssistant: scientific macro image of a Drosophila neural organism, dominant pathways {labels}, luminous synaptic filaments, realistic laboratory optics, biological tissue fused with a computational connectome.'
+    )
+optim=torch.optim.AdamW(model.parameters(),lr=5e-4)
 for text in train_texts:
     batch=tok(text,return_tensors='pt',truncation=True,max_length=192)
     out=model(**batch,labels=batch['input_ids']); optim.zero_grad(); out.loss.backward(); optim.step()
@@ -74,47 +79,55 @@ model.eval(); model.config.use_cache=True
 prompt=("You are the language head of a hybrid system controlled by a Drosophila connectome. "
         "Do not claim consciousness. Use the supplied neural state as control context.\n"
         f"Connectome state: {brain_summary}\nLatent signature={latent_sig:.4f}, energy={latent_energy:.4f}.\n"
-        "User request: Describe what image this hybrid brain should generate: a fruit fly neural organism inside a glowing laboratory, highly detailed, cinematic, biological and computational elements merged.\nAssistant:")
+        "User request: Write only one concise image-generation prompt, at most 55 words, for a realistic fruit-fly neural organism in a glowing laboratory. Merge biological anatomy and computational graph motifs. No explanation.\nAssistant:")
 inputs=tok(prompt,return_tensors='pt')
 with torch.no_grad():
-    gen=model.generate(**inputs,max_new_tokens=90,do_sample=True,temperature=float(np.clip(.55+abs(latent_sig)*.25,.55,.9)),top_p=.9,repetition_penalty=1.05)
+    gen=model.generate(**inputs,max_new_tokens=64,do_sample=True,temperature=0.35,top_p=.9,repetition_penalty=1.08)
 text=tok.decode(gen[0][inputs['input_ids'].shape[1]:],skip_special_tokens=True).strip()
 (OUT/'llm_output.txt').write_text(text,encoding='utf-8')
 model.save_pretrained(OUT/'llm_brain_lora'); tok.save_pretrained(OUT/'llm_brain_lora')
 
+# 3) train a brain->Stable-Diffusion controller, then use it in real diffusion inference
 class SDController(nn.Module):
     def __init__(self):
         super().__init__(); self.net=nn.Sequential(nn.Linear(24,32),nn.GELU(),nn.Linear(32,3))
     def forward(self,z): return self.net(z)
 ctrl=SDController(); copt=torch.optim.AdamW(ctrl.parameters(),lr=3e-3)
+# targets: guidance, steps, prompt-style intensity derived from latent statistics
+Z=[]; C=[]
 with torch.no_grad():
     ztrain=adapter.enc(torch.from_numpy(X[np.random.choice(T,1200,replace=False)])).numpy()
-C=[]
 for z in ztrain:
     m=float(np.mean(z)); e=float(np.mean(z*z)); a=float(np.mean(np.abs(z)))
-    C.append([2.5+4.0*min(1,e), 6+10*min(1,a), min(1,abs(m)*2.0)])
+    C.append([5.5+2.0*min(1,e), 11+7*min(1,a), min(1,abs(m)*2.5)])
 Z=torch.tensor(np.array(ztrain),dtype=torch.float32); C=torch.tensor(np.array(C),dtype=torch.float32)
 for _ in range(120):
     pr=ctrl(Z); ls=nn.functional.mse_loss(pr,C); copt.zero_grad(); ls.backward(); copt.step()
 with torch.no_grad(): c=ctrl(torch.from_numpy(latent)).numpy()
-guidance=float(np.clip(c[0],2.0,7.0)); steps=int(np.clip(round(float(c[1])),6,18)); style=float(np.clip(c[2],0,1))
+guidance=float(np.clip(c[0],4.5,8.0)); steps=int(np.clip(round(float(c[1])),10,18)); style=float(np.clip(c[2],0,1))
 torch.save(ctrl.state_dict(),OUT/'sd_brain_controller.pt')
 
+import gc
+del model, tok
+gc.collect()
 from diffusers import DiffusionPipeline, DPMSolverMultistepScheduler
-sd_id='segmind/tiny-sd'
+sd_id='stable-diffusion-v1-5/stable-diffusion-v1-5'
 pipe=DiffusionPipeline.from_pretrained(sd_id,torch_dtype=torch.float32,safety_checker=None,requires_safety_checker=False)
 pipe.scheduler=DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
 pipe=pipe.to('cpu')
+pipe.enable_attention_slicing()
+# LLM text becomes part of image prompt, while brain controller sets seed/guidance/steps
 seed=int((abs(latent_sig)*1e7 + latent_energy*1e8 + SEED))%(2**31-1)
-style_tag='intricate neural filaments, bioluminescent synapses, cinematic macro photography' if style>.35 else 'scientific visualization, clean laboratory lighting'
+style_tag='intricate neural filaments, bioluminescent synapses, cinematic macro photography, realistic optics' if style>.20 else 'scientific macro photography, clean laboratory lighting, realistic optics'
 img_prompt=('A biologically plausible fruit-fly neural organism fused with an AI machine in a glowing laboratory, '
             + style_tag + ', detailed Drosophila neural anatomy, visible computational graph motifs. ' + text[:220])
 generator=torch.Generator(device='cpu').manual_seed(seed)
-image=pipe(img_prompt,num_inference_steps=steps,guidance_scale=guidance,height=256,width=256,generator=generator).images[0]
-image.save(OUT/'flybrain_hybrid.png')
+negative='cartoon, illustration, low detail, blurry, deformed insect, extra limbs, text, watermark'
+image=pipe(img_prompt,negative_prompt=negative,num_inference_steps=steps,guidance_scale=guidance,height=384,width=384,generator=generator).images[0]
+image.save(OUT/'flybrain_hybrid_v2.png')
 
 summary={
- 'seed':SEED,'connectome_groups':G,'adapter_val_mse':val,'baseline_mse':base,'improvement_factor':base/max(val,1e-12),
+ 'version':2,'seed':SEED,'connectome_groups':G,'adapter_val_mse':val,'baseline_mse':base,'improvement_factor':base/max(val,1e-12),
  'brain_top_state':brain_summary,'brain_latent_signature':latent_sig,'brain_latent_energy':latent_energy,
  'llm_model':llm_id,'llm_lora_train_examples':len(train_texts),'llm_output':text,
  'sd_model':sd_id,'sd_controller_train_samples':len(Z),'sd_seed':seed,'sd_guidance':guidance,'sd_steps':steps,'sd_style':style,
