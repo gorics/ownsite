@@ -1,0 +1,16 @@
+name: FlyBrain Public Runner Ping
+
+on:
+  push:
+    branches: [flybrain-evolution-unified-20260929]
+    paths:
+      - '.github/workflows/flybrain-ping.yml'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo public-runner-ok
+          python --version
