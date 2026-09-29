@@ -1,0 +1,44 @@
+name: FlyBrain Unified Organism
+
+on:
+  push:
+    branches:
+      - flybrain-evolution-organism-20260929
+    paths:
+      - 'flybrain/**'
+      - '.github/workflows/flybrain-unified-organism.yml'
+  workflow_dispatch:
+
+jobs:
+  run-unified-organism:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install CPU ML stack
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install 'transformers>=4.45,<5' 'diffusers>=0.31,<0.37' accelerate safetensors pillow numpy
+      - name: Download real FlyBrain connectome
+        run: |
+          mkdir -p data
+          curl -L --fail --retry 3 -o data/connectome.bin.gz https://raw.githubusercontent.com/snedea/flybrain/main/data/connectome.bin.gz
+          curl -L --fail --retry 3 -o data/neuron_meta.json https://raw.githubusercontent.com/snedea/flybrain/main/data/neuron_meta.json
+          ls -lh data
+      - name: Train and run unified organism
+        env:
+          HF_HUB_DISABLE_TELEMETRY: '1'
+        run: |
+          python flybrain/unified_fly_llm_sd.py --steps 2 --out results/unified
+      - name: Upload actual outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: flybrain-unified-organism-results
+          path: results/unified/
+          if-no-files-found: error
+          retention-days: 30
