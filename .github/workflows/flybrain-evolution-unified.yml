@@ -1,0 +1,88 @@
+name: FlyBrain Evolution Unified
+
+on:
+  push:
+    branches: [flybrain-evolution-unified-20260929]
+    paths:
+      - 'tools/flybrain_evolution_unified.py'
+      - '.github/workflows/flybrain-evolution-unified.yml'
+  workflow_dispatch:
+    inputs:
+      generations:
+        description: 'Darwinian generations'
+        required: false
+        default: '40'
+
+permissions:
+  contents: read
+
+jobs:
+  evolve-train-fuse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      HF_HUB_DISABLE_TELEMETRY: '1'
+      TOKENIZERS_PARALLELISM: 'false'
+      OMP_NUM_THREADS: '4'
+      MKL_NUM_THREADS: '4'
+      FLY_OUT: flybrain-evolution-results
+      POPULATION: '24'
+    steps:
+      - name: Checkout experiment branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install CPU ML stack
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install 'transformers>=4.48,<5' 'diffusers>=0.33,<0.40' 'accelerate>=1.2,<2' safetensors sentencepiece huggingface_hub pillow numpy
+
+      - name: Clone open-source full FlyBrain
+        run: |
+          git clone --depth 1 https://github.com/snedea/flybrain.git flybrain-src
+          python - <<'PY'
+          import json
+          m=json.load(open('flybrain-src/data/neuron_meta.json'))
+          print('FlyBrain neurons=',m['neuron_count'],'edges=',m['edge_count'],'groups=',m['group_count'])
+          assert m['neuron_count']==139255
+          assert m['edge_count']>2000000
+          PY
+
+      - name: Evolve structure and train both neural organs
+        env:
+          FLY_REPO: flybrain-src
+          GENERATIONS: ${{ github.event.inputs.generations || '40' }}
+        run: |
+          mkdir -p "$FLY_OUT"
+          python -u tools/flybrain_evolution_unified.py | tee "$FLY_OUT/runner.log"
+
+      - name: Validate outputs
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('flybrain-evolution-results')
+          r=json.loads((p/'unified_result.json').read_text())
+          print(json.dumps(r,indent=2)[:12000])
+          assert r['status']=='ok'
+          assert r['connectome']['neurons']==139255
+          assert r['evolution']['metrics']['new_edges']>0
+          assert r['evolution']['final']['best_score']>=r['evolution']['baseline']['best_score']
+          assert (p/'best_genome.npz').stat().st_size>1000
+          assert (p/'stable_diffusion_output.png').stat().st_size>100
+          PY
+
+      - name: Upload actual result bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flybrain-evolution-unified-results
+          path: flybrain-evolution-results/
+          if-no-files-found: warn
+          retention-days: 30
