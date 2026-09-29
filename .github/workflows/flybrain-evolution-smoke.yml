@@ -1,0 +1,21 @@
+name: FlyBrain Evolution Smoke
+
+on:
+  push:
+    branches:
+      - flybrain-evolution-organism-20260929
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runtime check
+        run: |
+          python --version
+          python - <<'PY'
+          import platform
+          print('flybrain-github-runner-ok')
+          print(platform.platform())
+          PY
