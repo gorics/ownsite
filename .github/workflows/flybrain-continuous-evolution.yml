@@ -1,4 +1,5 @@
 name: FlyBrain Continuous Evolution
+# Persistent lineage: every run restores the previous champion before evolving again.
 
 on:
   schedule:
