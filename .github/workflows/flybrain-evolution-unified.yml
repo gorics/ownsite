@@ -1,4 +1,5 @@
 name: FlyBrain Evolution Unified
+# trigger-after-registration: 2026-09-29
 
 on:
   push:
@@ -30,19 +31,16 @@ jobs:
     steps:
       - name: Checkout experiment branch
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
-
       - name: Install CPU ML stack
         run: |
           python -m pip install --upgrade pip
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install 'transformers>=4.48,<5' 'diffusers>=0.33,<0.40' 'accelerate>=1.2,<2' safetensors sentencepiece huggingface_hub pillow numpy
-
       - name: Clone open-source full FlyBrain
         run: |
           git clone --depth 1 https://github.com/snedea/flybrain.git flybrain-src
@@ -53,7 +51,6 @@ jobs:
           assert m['neuron_count']==139255
           assert m['edge_count']>2000000
           PY
-
       - name: Evolve structure and train both neural organs
         env:
           FLY_REPO: flybrain-src
@@ -61,7 +58,6 @@ jobs:
         run: |
           mkdir -p "$FLY_OUT"
           python -u tools/flybrain_evolution_unified.py | tee "$FLY_OUT/runner.log"
-
       - name: Validate outputs
         run: |
           python - <<'PY'
@@ -77,7 +73,6 @@ jobs:
           assert (p/'best_genome.npz').stat().st_size>1000
           assert (p/'stable_diffusion_output.png').stat().st_size>100
           PY
-
       - name: Upload actual result bundle
         if: always()
         uses: actions/upload-artifact@v4
