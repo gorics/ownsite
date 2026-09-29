@@ -1,0 +1,75 @@
+name: FlyBrain Evolution Unified v3
+
+on:
+  push:
+    branches: [flybrain-evolution-unified-20260929]
+    paths:
+      - 'tools/flybrain_evolution_unified_v3.py'
+      - '.github/workflows/flybrain-evolution-unified-v3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  run-v3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      HF_HUB_DISABLE_TELEMETRY: '1'
+      TOKENIZERS_PARALLELISM: 'false'
+      OMP_NUM_THREADS: '4'
+      MKL_NUM_THREADS: '4'
+      FLY_OUT: flybrain-evolution-v3-results
+      POPULATION: '24'
+      GENERATIONS: '40'
+      FLY_REPO: flybrain-src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU ML stack
+        run: |
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install 'transformers>=4.48,<5' 'diffusers>=0.33,<0.40' accelerate safetensors sentencepiece huggingface_hub pillow numpy
+      - name: Clone full FlyBrain
+        run: git clone --depth 1 https://github.com/snedea/flybrain.git flybrain-src
+      - name: Evolve and train integrated organs
+        run: |
+          mkdir -p "$FLY_OUT"
+          python -u tools/flybrain_evolution_unified_v3.py | tee "$FLY_OUT/runner.log"
+      - name: Validate persistent organism checkpoint
+        run: |
+          python - <<'PY'
+          import json, math
+          from pathlib import Path
+          from PIL import Image
+          p=Path('flybrain-evolution-v3-results')
+          r=json.loads((p/'unified_result.json').read_text())
+          assert r['status']=='ok'
+          assert r['connectome']['neurons']==139255
+          assert r['connectome']['edges']==2698236
+          assert r['evolution']['metrics']['new_edges']>0
+          assert r['evolution']['final']['best_score']>=r['evolution']['baseline']['best_score']
+          assert r['llm']['model']=='HuggingFaceTB/SmolLM2-135M-Instruct'
+          assert r['llm']['loss_after'] < r['llm']['loss_before']
+          assert r['stable_diffusion']['model']=='segmind/tiny-sd'
+          assert r['stable_diffusion']['trained_delta_l2']>0
+          assert r['stable_diffusion']['losses'][-1] < r['stable_diffusion']['losses'][0]
+          vals=r['fusion']['motor_logits']+r['fusion']['final_organ_state']
+          assert all(math.isfinite(float(x)) for x in vals)
+          assert (p/'llm_organ_state.pt').stat().st_size>1000
+          assert (p/'sd_organ_delta.pt').stat().st_size>100
+          im=Image.open(p/'stable_diffusion_output.png')
+          assert im.size==(256,256)
+          print(json.dumps(r,indent=2)[:18000])
+          PY
+      - name: Upload evolved organism
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flybrain-evolution-unified-v3-results
+          path: flybrain-evolution-v3-results/
+          if-no-files-found: warn
+          retention-days: 30
