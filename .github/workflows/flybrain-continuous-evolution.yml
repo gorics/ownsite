@@ -37,21 +37,21 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install structural evolution runtime
+      - name: Install lightweight evolution runtime
         run: pip install numpy
       - name: Restore latest evolving genome
         id: restore
         uses: actions/cache/restore@v4
         with:
           path: flybrain-state
-          key: flybrain-state-v1-${{ github.run_id }}
+          key: flybrain-state-v2-${{ github.run_id }}
           restore-keys: |
-            flybrain-state-v1-
+            flybrain-state-v2-
       - name: Clone canonical open-source FlyBrain
         run: git clone --depth 1 https://github.com/snedea/flybrain.git flybrain-src
       - name: Continue Darwinian structural evolution
         run: |
-          python -u tools/flybrain_continuous_evolve.py | tee continuous-evolution.log
+          python -u tools/flybrain_continuous_evolve_v2.py | tee continuous-evolution.log
           python - <<'PY'
           import json
           r=json.load(open('flybrain-state/state.json'))
@@ -66,7 +66,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: flybrain-state
-          key: flybrain-state-v1-${{ github.run_id }}
+          key: flybrain-state-v2-${{ github.run_id }}
       - name: Publish this generation snapshot
         uses: actions/upload-artifact@v4
         with:
