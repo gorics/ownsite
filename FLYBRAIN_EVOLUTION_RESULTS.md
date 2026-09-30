@@ -2,11 +2,11 @@
 
 Branch: `flybrain-evolution-organism-20260929`
 
-## Structural connectome evolution (validated local run)
+## Accepted structural champion
 
 Parent FlyWire-derived connectome: 139,255 neurons / 2,698,236 synapses.
 
-160 generations, population 72:
+The latest accepted structural champion recorded by this project remains the result of the earlier validated local run (160 generations, population 72):
 
 - baseline proxy fitness: -1.5839431329701001
 - champion proxy fitness: 1.1906054767704406
@@ -19,32 +19,39 @@ Parent FlyWire-derived connectome: 139,255 neurons / 2,698,236 synapses.
 - full-LIF probe, visual -> head motor: 10 spikes
 - evolved connectome SHA256: `2f26abdbf31d26a6470c2379958779c848f1a614989d71ec8099bfa98f626a69`
 
-Continuation eras use a proxy + exact LIF acceptance gate. Three tested descendants improved proxy fitness as high as 1.219447 but degraded full-LIF behavior, so they were rejected and the prior champion was retained.
+Three later recorded descendants improved proxy fitness as high as 1.219447 but degraded full-LIF behavior. They remain rejected; the champion above is retained.
 
-## Unified model execution on GitHub Actions
+## Verified unified-organism GitHub Actions execution
 
-Successful Actions run: `36572917028`
-Artifact: `11035322380` (`flybrain-unified-organism-results`)
+Latest verified successful run at commit `bfd66aec448800a4708620b4ec6e7de8c2ba838f`: `36588656393`.
+Artifact: `11042129668` (`flybrain-unified-organism-results`).
 
-Actual open-source organs loaded by the workflow:
+The run actually downloaded and used the FlyWire-derived FlyBrain connectome from `snedea/flybrain` and recorded:
 
-- FlyBrain connectome from `snedea/flybrain`
-- `HuggingFaceTB/SmolLM2-135M-Instruct`
-- `diffusers/tiny-stable-diffusion-torch`
+- source neurons: 139,255
+- source edges: 2,698,236
+- source groups: 63
+- compressed connectome SHA256: `fbf8d440ca1207c7573e1acdd2366f9d0beb9b533c1710f21681264f81b1cc49`
+- LLM: `HuggingFaceTB/SmolLM2-135M-Instruct`
+- Stable Diffusion: `diffusers/tiny-stable-diffusion-torch`
 
-`flybrain/unified_fly_llm_sd.py` instantiates a single PyTorch `nn.Module` organism containing the fly encoder, heritable genome state, LLM, Stable-Diffusion text encoder/UNet/VAE, and trainable fly-to-LLM/fly-to-SD tissues. The same heritable latent state is injected into both language and diffusion computation, and the fusion tissue is jointly optimized by language-modeling plus diffusion-noise losses.
+CPU bounded training proof (2 optimizer steps):
 
-CPU proof run (2 optimizer steps):
-
-- total loss: 5.9917974472 -> 5.9193191528
-- LLM loss: 5.8602275848 -> 5.7884898186
-- diffusion loss: 1.0964013338 -> 1.0902230740
+- total loss: 5.9917893409729 -> 5.919310569763184
+- LLM loss: 5.860219478607178 -> 5.78848123550415
+- diffusion loss: 1.096401333808899 -> 1.0902230739593506
 - generated image: 128x128 `sample.png`
 - output checkpoint: `fusion_tissue.pt`
-- exact output metadata: `result.json`
+- seed: 20260929
 
 The pretrained base LLM and diffusion organ weights are frozen in this CPU proof run; the shared fly/genome/adaptor tissue is trained. This is a single runnable parameter graph with differentiated organs, not a claim that Transformer/UNet tensors are biologically identical to Drosophila LIF neurons.
 
+## Self-correction / acceptance gate
+
+The current branch contains the unified-organism runner and its workflows, but it does **not** contain the earlier structural-evolution/full-LIF continuation implementation or a serialized copy of the accepted evolved connectome. Therefore a successful unified-organism Actions run is not, by itself, evidence of a new structural descendant or of improved full-LIF behavior. Earlier notes that implied the current branch workflow itself performed structural evolution plus full-LIF gating were incorrect.
+
+Until structural mutation code, the accepted champion state, and the full-LIF validator are present and executed together, no new structural descendant may replace the accepted champion above. Unified-organism training runs may be reported as bounded training experiments only, and are not structural champion improvements.
+
 ## Limit
 
-The evolutionary loop can run without an era limit in a persistent environment, but no finite algorithm guarantees unbounded intelligence. Evolution can plateau or regress, hence the full-LIF validation gate and champion retention.
+No finite evolutionary algorithm guarantees unbounded intelligence. Evolution can plateau or regress, hence objective validation and champion retention are required.
