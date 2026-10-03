@@ -1,0 +1,32 @@
+name: KICE Fetch Temp
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'kice-fetch-request.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download PDF
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="$(cat kice-fetch-request.txt)"
+          curl -L --fail --retry 3 --retry-delay 2 "$url" -o KICE_english_2014-2027.pdf
+          test "$(stat -c%s KICE_english_2014-2027.pdf)" -gt 60000000
+          file KICE_english_2014-2027.pdf | grep -qi PDF
+      - name: Upload PDF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KICE_english_2014-2027
+          path: KICE_english_2014-2027.pdf
+          retention-days: 1
