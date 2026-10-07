@@ -121,7 +121,7 @@ for i,(title,article) in enumerate(current):
 base = WORK / "9_사문.pdf"
 base_id = "1PTpYJ_h56gNcIejtdtDYpX77nsKTuwWA"
 print("Downloading base Drive archive...")
-result = gdown.download(id=base_id, output=str(base), quiet=False, fuzzy=True)
+result = gdown.download(id=base_id, output=str(base), quiet=False)
 if not result or not base.exists():
     raise RuntimeError("Could not download base 9 사문.pdf from Google Drive")
 bd = fitz.open(base)
