@@ -3,6 +3,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'scripts/build_kice_socialculture_latest.py'
       - '.github/workflows/temp-build-kice-socialculture.yml'
   workflow_dispatch:
 
@@ -21,21 +22,23 @@ jobs:
       - name: Install dependencies
         run: pip install pymupdf requests beautifulsoup4 gdown
       - name: Build PDF
-        run: |
-          sed -i 's/, fuzzy=True//' scripts/build_kice_socialculture_latest.py
-          python scripts/build_kice_socialculture_latest.py
+        run: python scripts/build_kice_socialculture_latest.py
       - name: Verify PDF
         run: |
           python - <<'PY'
           import fitz, os
           p='KICE_socialculture_2014-2027_latest_first.pdf'
           d=fitz.open(p)
+          toc=d.get_toc()
           print('pages=', d.page_count)
-          print('bookmarks=', len(d.get_toc()))
+          print('bookmarks=', len(toc))
           print('size=', os.path.getsize(p))
-          print('first=', d.get_toc()[:3])
-          print('last=', d.get_toc()[-3:])
-          assert len(d.get_toc()) == 41
+          print('first=', toc[:3])
+          print('last=', toc[-3:])
+          assert len(toc) == 41
+          assert toc[0][1] == '2027학년도 9월 모의평가'
+          assert toc[1][1] == '2027학년도 6월 모의평가'
+          assert toc[-1][1] == '2014학년도 6월 모의평가'
           assert d.page_count >= 164
           PY
       - uses: actions/upload-artifact@v4
