@@ -1,0 +1,1 @@
+Trigger temporary KICE social culture PDF build for ChatGPT handoff.
