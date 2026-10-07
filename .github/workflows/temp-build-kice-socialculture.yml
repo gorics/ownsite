@@ -5,6 +5,8 @@ on:
     paths:
       - 'scripts/build_kice_socialculture_latest.py'
       - '.github/workflows/temp-build-kice-socialculture.yml'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
