@@ -1,0 +1,112 @@
+name: KICE English Official Answers Temporary
+on:
+  push:
+    paths:
+      - '.github/workflows/kice-english-answers-original-temp.yml'
+  workflow_dispatch:
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --quiet requests pypdf
+      - name: Download KICE official answer PDFs and preserve original pages
+        shell: bash
+        run: |
+          from pathlib import Path
+          import io, hashlib, requests, zipfile, time
+          from pypdf import PdfReader, PdfWriter
+          from requests.adapters import HTTPAdapter
+          from urllib3.util.retry import Retry
+          
+          SOURCES = [["2027_09","9a82c3711e18a3a73a9096daa25b0d44"],["2027_06","e9da3d27a5fe624f83b7e8e75b12f1da"],["2026_CSAT","6d7129b9f7dae9c58c6789c2b9215e48"],["2026_09","189c7830d3836b5ceda311f7b62f7af7"],["2026_06","4df26298e5f9e0805b9682d2e9f69bbd"],["2025_CSAT","8a38c5eb0033817b668427c0fcfdd593"],["2025_09","f67f72182c83b25568116030e57fcd15"],["2025_06","b589da9509036b93560087955c79d5b0"],["2024_CSAT","5f01d5304bc43b232febf86b09c8b330"],["2024_09","a0861335df0895ea33fcd2377d877698"],["2024_06","960fad96aa1ffc79403075e806f4a9bb"],["2023_CSAT","4b2553d12ec1d5c93d2d71e11e10f27c"],["2023_09","5f6608fb1937d7533405e8c76359af2e"],["2023_06","2b395c99533881d49d52e124cb71efb1"],["2022_CSAT","ec6cab9fcddcfe1faa365e0659777e80"],["2022_09","b4db52f9282e28e547200b46fbcfae28"],["2022_06","6f7abee83d32ed04468592ec9017d11d"],["2021_CSAT","36c07c7a1eb345481456dae04d715571"],["2021_09","99f40ac0d25a4d3062c4387a74007348"],["2021_06","83fd4256c3c1463036efdbb3e798997b"],["2020_CSAT","864f20cdd03cca6e338be4b115a4b16d"],["2020_09","51b8c762402d8f240477c581a6976924"],["2020_06","1f3d1ecdb626c01b61514f1c8b44d183"],["2019_CSAT","43d4ba55db1b700170f30197402c588c"],["2019_09","25cf0c9e9f1fe1b4c4cc9413e08ad6f3"],["2019_06","cb2a3db051de1d125ffabf795e15cee8"],["2018_CSAT","d26b335565d842defa6f8f322319b744"],["2018_09","0a88290a3cebd5fea71f40f70efdaab7"],["2018_06","e0fe82f6ececeb1d085aa4894cef195f"],["2017_CSAT","295e96a9ac349c534c75cba06de3128a"],["2017_09","0adc886ba8680f2fc8b4d4380f654209"],["2017_06","a8493f1cb568c0a72710de72b884da7a"],["2016_CSAT","ebe886c065737ce2acd36de87d5ba40d"],["2016_09","e28f970b8a9cf63397568e031a213ee0"],["2016_06","df7f5b14e6e776b462392b12bdcca3ca"],["2015_CSAT","b84d75872ee33d0f7a06b276f423fb5a"],["2015_09","fdf969f933a3b2167ff402361f07e15f"],["2015_06","ddcf57704fcc306d6c2f170e025e3c86"],["2014_CSAT_A","236837b182f8b4ae8bf9df8fc5c6fe82"],["2014_CSAT_B","37ada93cdfddf641acbd72198913b765"],["2014_09_A","f8a4c5d1c95fb6097fb8d2e933c86e20"],["2014_09_B","4b1b2a89c038ef4bad5a69e080f50f70"]]
+          URLBASE = "https://www.suneung.re.kr/boardCnts/fileDown.do?fileSeq="
+          ZIP2014 = "e195344b2df3ef66bbc5fd9fadd69d29"
+          OUT = Path("official-original-pdfs")
+          OUT.mkdir(exist_ok=True)
+          s = requests.Session()
+          s.headers.update({"User-Agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36", "Referer":"https://www.suneung.re.kr/boardCnts/list.do?boardID=1500236&m=0403&s=suneung"})
+          retry=Retry(total=4, backoff_factor=1, status_forcelist=[429,500,502,503,504])
+          s.mount("https://",HTTPAdapter(max_retries=retry))
+          
+          def download(file_id):
+              url=URLBASE+file_id
+              r=s.get(url,timeout=65)
+              r.raise_for_status()
+              return r.content
+          
+          writer=PdfWriter()
+          manifest=[]
+          errors=[]
+          def add_pdf(label,blob,source):
+              try:
+                  reader=PdfReader(io.BytesIO(blob))
+                  if not reader.pages:
+                      raise ValueError("No pages")
+                  fn=OUT/(label+".pdf")
+                  fn.write_bytes(blob)
+                  writer.add_outline_item(label,len(writer.pages))
+                  writer.append(reader)
+                  sha=hashlib.sha256(blob).hexdigest()
+                  manifest.append((label,source,len(reader.pages),len(blob),sha))
+                  print("OK",label,"pages",len(reader.pages),"bytes",len(blob),flush=True)
+              except Exception as ex:
+                  errors.append((label,"invalid_pdf:"+repr(ex)))
+                  print("ERROR",label,str(ex),flush=True)
+          
+          for label,file_id in SOURCES:
+              try:
+                  body=download(file_id)
+                  if body[:4]!=b"%PDF": raise ValueError("Not PDF: "+repr(body[:40]))
+                  add_pdf(label,body,URLBASE+file_id)
+              except Exception as ex:
+                  errors.append((label,repr(ex)))
+                  print("DOWNLOAD ERROR",label,repr(ex),flush=True)
+          
+          # 2014 June was distributed by KICE as a ZIP containing A/B and question/answer files.
+          try:
+              data=download(ZIP2014)
+              if not zipfile.is_zipfile(io.BytesIO(data)): raise ValueError("Official source isn't ZIP")
+              (OUT/"2014_06_KICE_original_bundle.zip").write_bytes(data)
+              with zipfile.ZipFile(io.BytesIO(data)) as z:
+                  selection=[]
+                  for name in z.namelist():
+                      try: ko=name.encode("cp437").decode("cp949")
+                      except: ko=name
+                      if not ko.lower().endswith(".pdf"):continue
+                      if ("정답" in ko) or ("답지" in ko):
+                          selection.append((ko,name))
+                  print("2014 June ZIP answer PDFs", [a for a,b in selection],flush=True)
+                  for form in ("A","B"):
+                      found=[(ko,original) for ko,original in selection if ("영어"+form) in ko.replace(" ","") or ("영어_"+form) in ko.replace(" ","")]
+                      for i,(ko,orig) in enumerate(found):
+                          add_pdf("2014_06_"+form+(f"_{i+1}" if i else ""),z.read(orig),URLBASE+ZIP2014+"#"+ko)
+                  if not selection: errors.append(("2014_06","no_answer_pdf_in_zip"))
+          except Exception as ex:
+              errors.append(("2014_06",repr(ex)))
+              print("2014 June ZIP ERROR",repr(ex),flush=True)
+          
+          if len(writer.pages)>0:
+              writer.add_metadata({"/Title":"KICE official original English answer sheet pages (newest first)","/Author":"Korea Institute of Curriculum and Evaluation (original sources)"})
+              with open("KICE_original_English_answer_sheets_newest_first.pdf","wb") as f: writer.write(f)
+          with zipfile.ZipFile("KICE_original_English_answer_sheets_individual.zip","w",zipfile.ZIP_DEFLATED) as z:
+              for f in sorted(OUT.glob("*")): z.write(f,arcname=f.name)
+              z.writestr("SOURCE_MANIFEST.tsv","label\toriginal_KICE_URL\tpages\tbytes\tsha256\n"+"\n".join("\t".join(map(str,row)) for row in manifest)+"\n")
+              z.writestr("DOWNLOAD_ERRORS.tsv","label\tdetail\n"+"\n".join("\t".join(map(str,row)) for row in errors)+"\n")
+          Path("kice_summary.txt").write_text(f"original_PDFs={len(manifest)}\nmerged_pages={len(writer.pages)}\nerrors={len(errors)}\n"+"\n".join(str(row) for row in errors)+"\n")
+          print(Path("kice_summary.txt").read_text(),flush=True)
+          if len(manifest)<35: raise SystemExit("Too many originals not downloadable")
+          
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kice-english-answers-original-archive
+          path: |
+            KICE_original_English_answer_sheets_newest_first.pdf
+            KICE_original_English_answer_sheets_individual.zip
+            kice_summary.txt
+          retention-days: 1
