@@ -17,6 +17,7 @@ jobs:
       - name: Download KICE official answer PDFs and preserve original pages
         shell: bash
         run: |
+          python - <<'PY'
           from pathlib import Path
           import io, hashlib, requests, zipfile, time
           from pypdf import PdfReader, PdfWriter
@@ -100,6 +101,7 @@ jobs:
           Path("kice_summary.txt").write_text(f"original_PDFs={len(manifest)}\nmerged_pages={len(writer.pages)}\nerrors={len(errors)}\n"+"\n".join(str(row) for row in errors)+"\n")
           print(Path("kice_summary.txt").read_text(),flush=True)
           if len(manifest)<35: raise SystemExit("Too many originals not downloadable")
+          PY
           
       - uses: actions/upload-artifact@v4
         if: always()
